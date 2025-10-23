@@ -229,14 +229,14 @@
     </template>
 
     <script type="module">
-        // --- INSERISCI QUI LE TUE NUOVE CREDENZIALI FIREBASE ---
+        
         const firebaseConfig = {
-            apiKey: "AIzaSyAiSvKb6dYzahH3XT4VPIWHSun0ESKiDuw",
-            authDomain: "preventivi-app-finale.firebaseapp.com",
-            projectId: "preventivi-app-finale",
-            storageBucket: "preventivi-app-finale.firebasestorage.app",
-            messagingSenderId: "61433090491",
-            appId: "1:61433090491:web:db3aadf438eda8923db49e"
+            apiKey: "AIzaSyAY4oE30dACMoDFQztKxCL3da2kEPtV4_Y",
+            authDomain: "preventivi-app-definitiva.firebaseapp.com",
+            projectId: "preventivi-app-definitiva",
+            storageBucket: "preventivi-app-definitiva.firebasestorage.app",
+            messagingSenderId: "233553869205",
+            appId: "1:233553869205:web:52829b433fa822856c9e9c"
         };
         // -----------------------------------------------
         
@@ -331,7 +331,7 @@
                 listenForQuotes();
                 renderCalculatorView();
             } catch (error) { 
-                console.error("Errore durante il caricamento dei dati:", error);
+                console.error("Errore during il caricamento dei dati:", error);
                 showError("Errore Dati", "Impossibile caricare i dati. Accedi come manager, vai in 'Amministrazione' e clicca 'Salva Tutte le Impostazioni' per creare la configurazione iniziale.", error); 
             }
         }
@@ -763,7 +763,7 @@
                         alert('Backup importato e salvato con successo.');
                     } else { throw new Error('File di backup non valido o incompleto.'); }
                 } catch (err) {
-                    alert(`Errore durante l'importazione: ${err.message}`);
+                    alert(`Errore during l'importazione: ${err.message}`);
                     renderAdminView(); 
                 }
             };
