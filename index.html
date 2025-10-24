@@ -3,8 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Preventivi Etichette PRO</title>
+    <title>Preventivi Etichette PRO v2</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -14,796 +17,457 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .tier-row:hover .delete-btn { opacity: 1; } .delete-btn { opacity: 0; transition: opacity 0.2s; }
         .material-row:hover .delete-btn { opacity: 1; }
-        
+
         @media print {
-            .no-print {
-                display: none !important;
-            }
-            body {
-                background-color: white !important;
-            }
-            body * {
-                visibility: hidden;
-            }
-            #main-app-content, #main-app-content > div, #pdf-content, #pdf-content * {
-                visibility: visible;
-            }
-            #app-container, #main-app-content {
-                position: static;
-                width: 100%;
-                max-width: 100%;
-                padding: 0;
-                margin: 0;
-            }
-            #main-app-content > div {
-                box-shadow: none !important;
-                border: none !important;
-                padding: 1rem;
-            }
+            .no-print { display: none !important; }
+            body { background-color: white !important; }
+            body * { visibility: hidden; }
+            #app-container > div, /* Seleziona il div figlio diretto per la visibilità */
+            #pdf-content, #pdf-content * { visibility: visible; }
+            #app-container { position: static; width: 100%; max-width: 100%; padding: 0; margin: 0; }
+            #app-container > div { box-shadow: none !important; border: none !important; padding: 1rem; } /* Stile per il contenuto visibile */
         }
     </style>
 </head>
 <body class="bg-gray-100 flex items-center justify-center min-h-screen p-4">
 
     <div id="app-container" class="w-full max-w-4xl mx-auto">
-        <div id="loading-view" class="flex flex-col items-center justify-center bg-white p-8 rounded-2xl shadow-lg"><div class="spinner"></div><p class="mt-4">Inizializzazione...</p></div>
-        <div id="login-view" class="hidden"></div>
-        <div id="main-app-content" class="hidden"></div>
+        <div class="flex items-center justify-center h-32">
+             <div class="spinner"></div> <span class="ml-4 text-gray-600">Caricamento...</span>
+        </div>
     </div>
 
-    <!-- TEMPLATES -->
     <template id="login-template">
         <div class="bg-white p-8 rounded-2xl shadow-lg max-w-md mx-auto">
             <h1 class="text-3xl font-bold text-center text-gray-800 mb-6">Accesso</h1>
             <form id="login-form" class="space-y-6">
-                <div><label for="username" class="block text-sm font-medium text-gray-700">Utente</label><input type="text" id="username" class="mt-1 w-full p-3 border rounded-lg" required></div>
+                <div><label for="email" class="block text-sm font-medium text-gray-700">Email</label><input type="email" id="email" class="mt-1 w-full p-3 border rounded-lg" required></div>
                 <div><label for="password" class="block text-sm font-medium text-gray-700">Password</label><input type="password" id="password" class="mt-1 w-full p-3 border rounded-lg" required></div>
                 <p id="login-error" class="text-red-500 text-sm text-center h-4"></p>
-                <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700">Entra</button>
+                <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700">Entra con Email</button>
+                <div class="my-4 flex items-center before:mt-0.5 before:flex-1 before:border-t before:border-gray-300 after:mt-0.5 after:flex-1 after:border-t after:border-gray-300">
+                  <p class="mx-4 mb-0 text-center font-semibold text-gray-500">oppure</p>
+                </div>
+                <button type="button" data-action="login-anonymous" class="w-full bg-gray-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-gray-600">Entra come Ospite</button>
             </form>
         </div>
     </template>
 
     <template id="calculator-template">
-        <div class="bg-white p-8 rounded-2xl shadow-lg">
-            <div class="flex justify-between items-center mb-8">
+        <div id="main-app-content" class="bg-white p-8 rounded-2xl shadow-lg">
+            <div class="flex justify-between items-center mb-8 no-print">
                 <div><h1 class="text-3xl font-bold text-gray-800">Crea Preventivo</h1><p id="welcome-message" class="text-sm text-gray-500"></p></div>
                 <div class="space-x-2">
-                    <button data-action="open-help" class="text-sm bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg">Guida</button>
                     <button data-action="open-archive" class="text-sm bg-gray-200 text-gray-800 font-semibold py-2 px-4 rounded-lg">Archivio</button>
-                    <button data-action="open-admin" class="text-sm bg-blue-50 text-blue-700 font-semibold py-2 px-4 rounded-lg manager-only">Amministrazione</button>
+                    <button data-action="open-admin" class="text-sm bg-blue-50 text-blue-700 font-semibold py-2 px-4 rounded-lg manager-only" style="display: none;">Amministrazione</button>
                     <button data-action="logout" class="text-sm bg-red-50 text-red-700 font-semibold py-2 px-4 rounded-lg">Esci</button>
                 </div>
             </div>
             <form id="quote-form" class="space-y-6">
-                 <div class="grid md:grid-cols-2 gap-6"><div><label class="block text-sm">Nome Cliente</label><input type="text" name="clientName" class="mt-1 w-full p-3 border rounded-lg" required></div><div><label class="block text-sm">Nome Lavoro</label><input type="text" name="jobName" class="mt-1 w-full p-3 border rounded-lg" required></div></div>
+                <div class="grid md:grid-cols-2 gap-6"><div><label class="block text-sm">Nome Cliente</label><input type="text" name="clientName" class="mt-1 w-full p-3 border rounded-lg" required></div><div><label class="block text-sm">Nome Lavoro</label><input type="text" name="jobName" class="mt-1 w-full p-3 border rounded-lg" required></div></div>
                 <div class="grid md:grid-cols-2 gap-6">
-                    <div><label class="block text-sm">Altezza (mm) Lato uscita</label><input type="number" name="height" class="mt-1 w-full p-3 border rounded-lg" required></div>
-                    <div><label class="block text-sm">Larghezza (mm)</label><input type="number" name="width" class="mt-1 w-full p-3 border rounded-lg" required></div>
+                    <div><label class="block text-sm">Altezza (mm) Lato uscita</label><input type="number" name="height" class="mt-1 w-full p-3 border rounded-lg" required min="1"></div>
+                    <div><label class="block text-sm">Larghezza (mm)</label><input type="number" name="width" class="mt-1 w-full p-3 border rounded-lg" required min="1"></div>
                 </div>
                 <div class="grid md:grid-cols-2 gap-6">
-                    <div><label class="block text-sm">Materiale</label><select name="materialId" class="mt-1 w-full p-3 border rounded-lg"></select></div>
+                    <div><label class="block text-sm">Materiale</label><select name="materialId" class="mt-1 w-full p-3 border rounded-lg" required><option value="">Seleziona...</option></select></div>
                     <div><label class="block text-sm">N° Varianti (referenze)</label><input type="number" name="variants" value="1" min="1" class="mt-1 w-full p-3 border rounded-lg"></div>
                 </div>
                 <fieldset class="border rounded-lg p-4">
                     <legend class="text-sm font-medium text-gray-700 px-2">Quantità Totale</legend>
                     <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mt-2">
-                        <div><input type="number" name="quantity1" placeholder="Qtà 1" class="w-full p-2 border rounded-md" required></div>
-                        <div><input type="number" name="quantity2" placeholder="Qtà 2" class="w-full p-2 border rounded-md"></div>
-                        <div><input type="number" name="quantity3" placeholder="Qtà 3" class="w-full p-2 border rounded-md"></div>
-                        <div><input type="number" name="quantity4" placeholder="Qtà 4" class="w-full p-2 border rounded-md"></div>
-                        <div><input type="number" name="quantity5" placeholder="Qtà 5" class="w-full p-2 border rounded-md"></div>
+                        <div><input type="number" name="quantity1" placeholder="Qtà 1" class="w-full p-2 border rounded-md" required min="1"></div>
+                        <div><input type="number" name="quantity2" placeholder="Qtà 2" class="w-full p-2 border rounded-md" min="1"></div>
+                        <div><input type="number" name="quantity3" placeholder="Qtà 3" class="w-full p-2 border rounded-md" min="1"></div>
+                        <div><input type="number" name="quantity4" placeholder="Qtà 4" class="w-full p-2 border rounded-md" min="1"></div>
+                        <div><input type="number" name="quantity5" placeholder="Qtà 5" class="w-full p-2 border rounded-md" min="1"></div>
                     </div>
                 </fieldset>
-                <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700">Calcola</button>
+                <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 no-print">Calcola</button>
             </form>
         </div>
     </template>
 
     <template id="admin-template">
-        <div class="bg-white p-8 rounded-2xl shadow-lg">
-            <div class="flex justify-between items-center mb-6">
+        <div id="main-app-content" class="bg-white p-8 rounded-2xl shadow-lg">
+            <div class="flex justify-between items-center mb-6 no-print">
                 <h2 class="text-3xl font-bold text-gray-800">Amministrazione</h2>
                 <button type="button" data-action="close-admin" class="bg-gray-200 font-bold py-2 px-4 rounded-lg">Indietro</button>
             </div>
-            
+
             <form id="admin-form" class="space-y-6">
                 <fieldset class="border rounded-lg p-4 mb-6"><legend class="text-lg font-semibold px-2">Listino Prezzi di Riferimento</legend>
                     <div class="grid grid-cols-2 md:grid-cols-3 gap-4 mt-2 mb-4">
-                        <div><label class="block text-sm">Formato Std H (mm)</label><input type="number" name="stdHeight" class="w-full p-2 border rounded-md"></div>
-                        <div><label class="block text-sm">Formato Std L (mm)</label><input type="number" name="stdWidth" class="w-full p-2 border rounded-md"></div>
-                        <div><label class="block text-sm">Materiale Riferimento</label><select name="stdMaterialId" class="w-full p-2 border rounded-md"></select></div>
+                        <div><label class="block text-sm">Formato Std H (mm)</label><input type="number" name="stdHeight" class="w-full p-2 border rounded-md" min="1" required></div>
+                        <div><label class="block text-sm">Formato Std L (mm)</label><input type="number" name="stdWidth" class="w-full p-2 border rounded-md" min="1" required></div>
+                        <div><label class="block text-sm">Materiale Riferimento</label><select name="stdMaterialId" class="w-full p-2 border rounded-md" required></select></div>
                     </div>
                     <div id="pricelist-tiers" class="space-y-2"></div>
-                    <button type="button" data-action="add-pricelist-tier" class="mt-4 text-sm bg-indigo-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-600 transition">+ Aggiungi Scaglione</button>
+                    <button type="button" data-action="add-pricelist-tier" class="mt-4 text-sm bg-indigo-500 text-white font-semibold py-2 px-4 rounded-lg hover:bg-indigo-600 transition no-print">+ Aggiungi Scaglione</button>
                 </fieldset>
 
-                <fieldset class="border rounded-lg p-4 mb-6"><legend class="text-lg font-semibold px-2">Gestione Utenti</legend>
-                    <div id="users-list" class="space-y-2 my-4"></div>
-                    <div class="flex items-center gap-2">
-                        <input type="text" name="newUsername" placeholder="Nuovo utente" class="w-1/3 p-2 border rounded-md">
-                        <input type="password" name="newPassword" placeholder="Password" class="w-1/3 p-2 border rounded-md">
-                        <button type="button" data-action="add-user" class="w-1/3 bg-green-500 text-white font-semibold py-2 px-4 rounded-lg">+ Aggiungi</button>
-                    </div>
-                </fieldset>
-                
-                 <fieldset class="border rounded-lg p-4"><legend class="text-lg font-semibold px-2">Parametri Macchine e Costi (per Calcolo Reale)</legend><div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-2">
-                    <div><label class="block text-sm">Larghezza Bobina (mm)</label><input type="number" name="paperWidth" class="w-full mt-1 p-2 border rounded-md"></div>
-                    <div><label class="block text-sm">Scarto Avviamento (mt)</label><input type="number" name="setupMeters" class="w-full mt-1 p-2 border rounded-md"></div>
-                    <div><label class="block text-sm">Costo Op. Domino (€/ora)</label><input type="number" step="0.01" name="dominoCost" class="w-full mt-1 p-2 border rounded-md"></div>
-                    <div><label class="block text-sm">Velocità Domino (mt/min)</label><input type="number" name="dominoSpeed" class="w-full mt-1 p-2 border rounded-md"></div>
-                    <div><label class="block text-sm">Costo Op. Sam (€/ora)</label><input type="number" step="0.01" name="samCost" class="w-full mt-1 p-2 border rounded-md"></div>
-                    <div><label class="block text-sm">Velocità Sam (mt/min)</label><input type="number" name="samSpeed" class="w-full mt-1 p-2 border rounded-md"></div>
-                    <div><label class="block text-sm">Costo Op. Prati (€/ora)</label><input type="number" step="0.01" name="pratiCost" class="w-full mt-1 p-2 border rounded-md"></div>
-                    <div><label class="block text-sm">Velocità Prati (mt/min)</label><input type="number" name="pratiSpeed" class="w-full mt-1 p-2 border rounded-md"></div>
-                    <div><label class="block text-sm">Costo Minimo Prati (€)</label><input type="number" step="0.01" name="pratiMinCost" class="w-full mt-1 p-2 border rounded-md"></div>
-                    <div><label class="block text-sm">Margine Utile (%)</label><input type="number" step="1" name="margin" class="w-full mt-1 p-2 border rounded-md"></div>
+                <fieldset class="border rounded-lg p-4"><legend class="text-lg font-semibold px-2">Parametri Macchine e Costi</legend><div class="grid grid-cols-2 md:grid-cols-4 gap-4 mt-2">
+                    <div><label class="block text-sm">Larghezza Bobina (mm)</label><input type="number" name="paperWidth" class="w-full mt-1 p-2 border rounded-md" min="1" required></div>
+                    <div><label class="block text-sm">Scarto Avviamento (mt)</label><input type="number" name="setupMeters" class="w-full mt-1 p-2 border rounded-md" min="0" required></div>
+                    <div><label class="block text-sm">Costo Op. Domino (€/ora)</label><input type="number" step="0.01" name="dominoCost" class="w-full mt-1 p-2 border rounded-md" min="0" required></div>
+                    <div><label class="block text-sm">Velocità Domino (mt/min)</label><input type="number" name="dominoSpeed" class="w-full mt-1 p-2 border rounded-md" min="1" required></div>
+                    <div><label class="block text-sm">Costo Op. Sam (€/ora)</label><input type="number" step="0.01" name="samCost" class="w-full mt-1 p-2 border rounded-md" min="0" required></div>
+                    <div><label class="block text-sm">Velocità Sam (mt/min)</label><input type="number" name="samSpeed" class="w-full mt-1 p-2 border rounded-md" min="1" required></div>
+                    <div><label class="block text-sm">Costo Op. Prati (€/ora)</label><input type="number" step="0.01" name="pratiCost" class="w-full mt-1 p-2 border rounded-md" min="0" required></div>
+                    <div><label class="block text-sm">Velocità Prati (mt/min)</label><input type="number" name="pratiSpeed" class="w-full mt-1 p-2 border rounded-md" min="1" required></div>
+                    <div><label class="block text-sm">Costo Minimo Prati (€)</label><input type="number" step="0.01" name="pratiMinCost" class="w-full mt-1 p-2 border rounded-md" min="0" required></div>
+                    <div><label class="block text-sm">Margine Utile (%)</label><input type="number" step="1" name="margin" class="w-full mt-1 p-2 border rounded-md" min="0" required></div>
                 </div></fieldset>
-                <fieldset class="border rounded-lg p-4"><legend class="text-lg font-semibold px-2">Gestione Materiali</legend><div id="materials-list" class="space-y-2 mt-2"></div><button type="button" data-action="add-material-row" class="mt-4 text-sm bg-blue-500 text-white font-semibold py-2 px-4 rounded-lg">+ Aggiungi Materiale</button></fieldset>
+                <fieldset class="border rounded-lg p-4"><legend class="text-lg font-semibold px-2">Gestione Materiali</legend><div id="materials-list" class="space-y-2 mt-2"></div><button type="button" data-action="add-material-row" class="mt-4 text-sm bg-blue-500 text-white font-semibold py-2 px-4 rounded-lg no-print">+ Aggiungi Materiale</button></fieldset>
                 <p id="admin-feedback" class="h-5 text-center font-medium"></p>
-                <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg">Salva Tutte le Impostazioni</button>
-                 <div class="flex gap-4 mt-4 border-t pt-4"><button type="button" data-action="export-backup" class="w-full bg-green-600 text-white font-bold py-3 rounded-lg">Esporta</button><label class="w-full bg-yellow-500 text-white font-bold py-3 rounded-lg text-center cursor-pointer">Importa<input type="file" id="backup-file-input" class="hidden" accept=".json"></label></div>
+                <button type="submit" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg no-print">Salva Tutte le Impostazioni</button>
+                <div class="flex gap-4 mt-4 border-t pt-4 no-print"><button type="button" data-action="export-backup" class="w-full bg-green-600 text-white font-bold py-3 rounded-lg">Esporta Configurazione</button><label class="w-full bg-yellow-500 text-white font-bold py-3 rounded-lg text-center cursor-pointer">Importa Configurazione<input type="file" id="backup-file-input" class="hidden" accept=".json"></label></div>
             </form>
         </div>
     </template>
-    
+
     <template id="archive-template">
-         <div class="bg-white p-8 rounded-2xl shadow-lg">
-            <div class="flex justify-between items-center mb-6"><h2 class="text-3xl font-bold text-gray-800">Archivio</h2><button data-action="close-archive" class="bg-gray-200 font-bold py-2 px-4 rounded-lg">Indietro</button></div>
-            <input type="text" id="search-client-input" placeholder="Cerca per cliente..." class="w-full p-3 border rounded-lg mb-6">
-            <div id="quotes-archive-list" class="space-y-3 max-h-96 overflow-y-auto"></div>
+        <div id="main-app-content" class="bg-white p-8 rounded-2xl shadow-lg">
+            <div class="flex justify-between items-center mb-6 no-print"><h2 class="text-3xl font-bold text-gray-800">Archivio Preventivi</h2><button data-action="close-archive" class="bg-gray-200 font-bold py-2 px-4 rounded-lg">Indietro</button></div>
+            <input type="text" id="search-client-input" placeholder="Cerca per cliente..." class="w-full p-3 border rounded-lg mb-6 no-print">
+            <div id="quotes-archive-list" class="space-y-3 max-h-[60vh] overflow-y-auto"><p class="text-center text-gray-500">Caricamento preventivi...</p></div>
         </div>
     </template>
 
     <template id="results-template">
-         <div class="bg-white p-8 rounded-2xl shadow-lg">
+        <div id="main-app-content" class="bg-white p-8 rounded-2xl shadow-lg">
             <div class="flex justify-end mb-4 no-print">
                 <button data-action="back-to-calculator" class="bg-gray-200 font-bold py-2 px-4 rounded-lg">Indietro</button>
             </div>
             <div id="pdf-content"></div>
             <div class="mt-8 flex gap-4 no-print">
-                <button data-action="save-or-update-quote" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg">Salva</button>
+                <button data-action="save-or-update-quote" class="w-full bg-blue-600 text-white font-bold py-3 rounded-lg">Salva Preventivo</button>
                 <button data-action="create-pdf" class="w-full bg-red-600 text-white font-bold py-3 rounded-lg">Stampa / PDF</button>
             </div>
         </div>
     </template>
-    
+
     <template id="help-template">
-        <div id="help-modal-backdrop" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 no-print">
-            <div id="help-modal-content" class="bg-white rounded-2xl shadow-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto p-8 relative">
-                <button data-action="close-help" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800 text-3xl leading-none">&times;</button>
-                <h2 class="text-3xl font-bold text-gray-800 mb-6">Guida Utente</h2>
-                <div class="space-y-4">
-                    <div>
-                        <h3 class="text-xl font-semibold mb-2">1. Creazione di un Preventivo</h3>
-                        <p>Nella schermata principale, compila i campi richiesti:</p>
-                        <ul class="list-disc list-inside ml-4 mt-2 text-gray-700">
-                            <li><b>Cliente e Lavoro:</b> Inserisci i nomi per identificare il preventivo.</li>
-                            <li><b>Dimensioni:</b> Inserisci larghezza e altezza dell'etichetta in millimetri.</li>
-                            <li><b>Materiale:</b> Seleziona il tipo di carta dall'elenco.</li>
-                            <li><b>Quantità:</b> Inserisci fino a 5 diverse quantità per confrontare i prezzi. Solo il primo campo è obbligatorio.</li>
-                        </ul>
-                        <p class="mt-2">Clicca su <b>"Calcola"</b> per vedere i risultati.</p>
-                    </div>
-                     <div>
-                        <h3 class="text-xl font-semibold mb-2">2. Risultati e Salvataggio</h3>
-                        <p>Dopo il calcolo, vedrai una tabella con i prezzi per ogni quantità. Da qui puoi:</p>
-                         <ul class="list-disc list-inside ml-4 mt-2 text-gray-700">
-                            <li><b>Salvare:</b> Clicca su <b>"Salva Preventivo"</b> per aggiungerlo all'archivio. Se stai modificando un preventivo, il pulsante diventerà <b>"Aggiorna Preventivo"</b>.</li>
-                            <li><b>Creare un PDF:</b> Clicca su <b>"Stampa / PDF"</b> per aprire l'anteprima di stampa del browser.</li>
-                            <li><b>Tornare Indietro:</b> Clicca su <b>"Indietro"</b> per modificare i dati inseriti.</li>
-                        </ul>
-                    </div>
-                     <div>
-                        <h3 class="text-xl font-semibold mb-2">3. Archivio Preventivi</h3>
-                        <p>Cliccando su <b>"Archivio"</b>, puoi consultare i preventivi che hai creato. Puoi cercare un preventivo per nome cliente e cliccare su <b>"Modifica"</b> per caricarlo e aggiornarlo.</p>
-                    </div>
-                </div>
-                <div id="manager-guide-section" class="hidden mt-8 pt-6 border-t space-y-4">
+         <div id="help-modal-backdrop" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 no-print">
+             <div id="help-modal-content" class="bg-white rounded-2xl shadow-lg max-w-3xl w-full max-h-[90vh] overflow-y-auto p-8 relative">
+                 <button data-action="close-help" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800 text-3xl leading-none">&times;</button>
+                 <h2 class="text-3xl font-bold text-gray-800 mb-6">Guida Utente</h2>
+                 <div class="space-y-4">
+                     <p>Questa app salva tutti i dati (preventivi e configurazioni) su Firebase. I dati sono condivisi tra gli utenti autorizzati.</p>
+                     <div><h3 class="text-xl font-semibold mb-2">1. Creazione di un Preventivo</h3><p>Compila i campi richiesti e clicca "Calcola".</p></div>
+                     <div><h3 class="text-xl font-semibold mb-2">2. Risultati e Salvataggio</h3><p>Clicca "Salva Preventivo" per salvarlo su Firebase, o "Stampa / PDF" per stamparlo.</p></div>
+                     <div><h3 class="text-xl font-semibold mb-2">3. Archivio</h3><p>Consulta, cerca e ricarica i preventivi salvati da te o da altri (se sei manager).</p></div>
+                 </div>
+                 <div id="manager-guide-section" class="hidden mt-8 pt-6 border-t space-y-4">
                      <h2 class="text-3xl font-bold text-gray-800 mb-6">Guida Manager</h2>
-                     <div>
-                        <h3 class="text-xl font-semibold mb-2">1. Accesso e Funzionalità Aggiuntive</h3>
-                        <p>Accedendo come <b>manager</b>, sblocchi tutte le funzionalità avanzate. Oltre a quanto visibile all'utente standard, hai accesso al pannello di <b>Amministrazione</b>.</p>
-                    </div>
-                     <div>
-                        <h3 class="text-xl font-semibold mb-2">2. Pannello di Amministrazione</h3>
-                        <p>Qui puoi configurare l'intero motore di calcolo:</p>
-                        <ul class="list-disc list-inside ml-4 mt-2 text-gray-700">
-                            <li><b>Gestione Utenti:</b> Crea e cancella gli account per i venditori.</li>
-                            <li><b>Parametri Macchine e Costi:</b> Imposta tutti i costi di produzione, le velocità delle macchine, il margine e le regole per il prezzo minimo.</li>
-                            <li><b>Gestione Materiali:</b> Aggiungi nuovi tipi di carta con il loro costo al metro quadro o elimina quelli esistenti.</li>
-                             <li><b>Backup:</b> Usa <b>"Esporta"</b> per salvare la configurazione in un file. Usa <b>"Importa"</b> per ripristinare una configurazione. L'importazione salva automaticamente i nuovi dati.</li>
-                        </ul>
-                    </div>
-                      <div>
-                        <h3 class="text-xl font-semibold mb-2">3. Differenze di Visualizzazione</h3>
-                        <p>Come manager, vedi più informazioni:</p>
-                        <ul class="list-disc list-inside ml-4 mt-2 text-gray-700">
-                            <li><b>Nei Preventivi:</b> Visualizzi il dettaglio completo dei costi industriali e la colonna "Incremento".</li>
-                            <li><b>Nell'Archivio:</b> Visualizzi i preventivi creati da tutti gli utenti.</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </template>
+                     <p>Accedendo con l'email e la password del manager, sblocchi il pannello "Amministrazione" per configurare materiali, costi e listino, e puoi vedere/eliminare tutti i preventivi.</p>
+                 </div>
+             </div>
+         </div>
+     </template>
 
-    <script type="module">
-        
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+
+        // --- Configurazione Firebase (MODIFICA CON LE TUE CHIAVI E DATI MANAGER!) ---
         const firebaseConfig = {
-            apiKey: "AIzaSyAY4oE30dACMoDFQztKxCL3da2kEPtV4_Y",
-            authDomain: "preventivi-app-definitiva.firebaseapp.com",
-            projectId: "preventivi-app-definitiva",
-            storageBucket: "preventivi-app-definitiva.firebasestorage.app",
-            messagingSenderId: "233553869205",
-            appId: "1:233553869205:web:52829b433fa822856c9e9c"
+          apiKey: "AIzaSyCK2CUKXgBdcWY7XBWjo0dx3-J_zOiYGSE", // METTI LA TUA API KEY QUI
+          authDomain: "app-preventivi-sp.firebaseapp.com", // METTI IL TUO AUTH DOMAIN QUI
+          projectId: "app-preventivi-sp", // METTI IL TUO PROJECT ID QUI
+          storageBucket: "app-preventivi-sp.firebasestorage.app", // METTI IL TUO STORAGE BUCKET QUI
+          messagingSenderId: "650738816559", // METTI IL TUO MESSAGING SENDER ID QUI
+          appId: "1:650738816559:web:e1abd24e54d57bb54318da" // METTI LA TUA APP ID QUI
         };
-        // -----------------------------------------------
-        
-        const __firebase_config = JSON.stringify(firebaseConfig);
-        const __app_id = firebaseConfig.projectId || 'default-label-app-pro';
+        const MANAGER_EMAIL = "mazhellas@gmail.com"; // <-- EMAIL MANAGER INSERITA!
+        const MANAGER_UID = "KVyXqSdZTKUq1iRGJGPnaVMRNby1"; // <-- UID MANAGER INSERITO!
 
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getFirestore, collection, addDoc, getDoc, doc, setDoc, getDocs, deleteDoc, query, where, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        // Inizializza Firebase e i servizi
+        const firebaseApp = firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+        const auth = firebase.auth();
 
+        // --- Variabili Globali dell'App ---
         const G = {
-            db: null, auth: null, currentUser: null,
-            appData: {}, quotes: [], currentQuoteData: null, unsubscribeQuotes: null,
+            currentUser: null,
+            userRole: 'user',
+            appData: { config: {}, pricelist: { tiers: [] }, materials: [] },
+            quotesCache: [],
+            currentQuoteData: null,
             editingQuoteId: null,
-            appId: typeof __app_id !== 'undefined' ? __app_id : 'default-label-app-pro',
-            firebaseConfig: null,
             DEFAULT_DATA: {
                 config: { paperWidth: 308, setupMeters: 30, dominoCost: 110, dominoSpeed: 30, samCost: 110, samSpeed: 6, pratiCost: 40, pratiSpeed: 40, pratiMinCost: 40, margin: 40 },
                 pricelist: { stdWidth: 80, stdHeight: 50, stdMaterialId: 'mat_default_patinata', tiers: [{quantity: 1000, price: 145}, {quantity: 5000, price: 250}] },
-                materials: [{ id: 'mat_default_patinata', name: 'Patinata', price: 0.40 }], 
-                users: []
+                materials: [{ id: 'mat_default_patinata', name: 'Patinata', price: 0.40 }]
             },
-            PATHS: {
-                appData: () => `artifacts/${G.appId}/public/data/config/main`,
-                quotes: () => `artifacts/${G.appId}/public/data/quotes`
-            }
+            configListener: null,
+            quotesListener: null
         };
 
-        function showView(viewId, message) {
-            document.querySelectorAll('#app-container > div').forEach(div => div.classList.add('hidden'));
-            const mainContent = document.getElementById('main-app-content');
-            if (viewId === 'loading') {
-                document.getElementById('loading-view').classList.remove('hidden');
-                if (message) document.querySelector('#loading-view p').textContent = message;
-            } else if (viewId === 'login') {
-                document.getElementById('login-view').innerHTML = document.getElementById('login-template').innerHTML;
-                document.getElementById('login-view').classList.remove('hidden');
-            } else {
-                const template = document.getElementById(`${viewId}-template`);
-                if(template) {
-                    mainContent.innerHTML = template.innerHTML;
-                    mainContent.classList.remove('hidden');
-                } else { showError("Errore Interfaccia", `Template non trovato: ${viewId}`); }
+        const appContainer = document.getElementById('app-container');
+
+        // --- Funzioni di Rendering Viste ---
+        function showView(viewId) {
+            if (G.configListener) { G.configListener(); G.configListener = null; }
+            if (G.quotesListener) { G.quotesListener(); G.quotesListener = null; }
+
+            const template = document.getElementById(`${viewId}-template`);
+            if (!template) {
+                console.error(`Template ${viewId} non trovato!`);
+                appContainer.innerHTML = '<p class="text-red-500 text-center">Errore: template non trovato.</p>';
+                return;
             }
+            // Clona il template invece di usare innerHTML per preservare gli script interni (se ce ne fossero)
+            const templateContent = template.content.cloneNode(true);
+            appContainer.innerHTML = ''; // Svuota il contenitore
+            appContainer.appendChild(templateContent);
+
+            attachCommonListeners(); // Riattacca listener comuni
+
+             // Usa setTimeout per assicurare che il DOM sia completamente aggiornato prima di inizializzare
+             setTimeout(() => {
+                if (viewId === 'calculator') initCalculatorView();
+                else if (viewId === 'admin') initAdminView();
+                else if (viewId === 'archive') initArchiveView();
+                else if (viewId === 'results') initResultsView();
+                else if (viewId === 'login') initLoginView();
+            }, 0);
         }
-        
-        function showError(title, message, error = {}) {
-            const container = document.getElementById('app-container');
-            if (container) {
-                container.innerHTML = `<div class="bg-white p-8 rounded-2xl shadow-lg text-center"><h2 class="text-2xl font-bold text-red-600">${title}</h2><p class="mt-4 text-gray-700">${message}</p><p class="mt-2 text-xs text-gray-500">Dettagli: ${error.message||'N/A'}.</p></div>`;
-            }
-        }
-        
-        async function main() {
-            try {
-                G.firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-                if (!G.firebaseConfig || G.firebaseConfig.apiKey === "INCOLLA_LA_TUA_API_KEY_QUI") {
-                    throw new Error("Configurazione Firebase non trovata. Incolla le tue credenziali nel blocco 'firebaseConfig' all'inizio dello script.");
-                }
-                const app = initializeApp(G.firebaseConfig);
-                G.db = getFirestore(app); G.auth = getAuth(app);
-                
-                await signInAnonymously(G.auth);
-                
-                document.getElementById('app-container').addEventListener('submit', handleSubmits);
-                document.getElementById('app-container').addEventListener('click', handleClicks);
-                document.getElementById('app-container').addEventListener('input', handleInputs);
-                document.getElementById('app-container').addEventListener('change', handleChanges);
-                showView('login');
-            } catch (error) { 
-                console.error("ERRORE DI INIZIALIZZAZIONE:", error);
-                if (error.code === 'auth/configuration-not-found') {
-                    showError(
-                        "AZIONE RICHIESTA: Configurazione Firebase Mancante",
-                        "Il servizio di Autenticazione non è stato attivato. Segui questi passaggi: 1) Vai sulla console di Firebase. 2) Clicca su 'Authentication' nel menu. 3) Clicca 'Inizia'. 4) Nella lista dei provider, clicca su 'Anonimo', abilitalo e salva.",
-                        error
-                    );
+
+        // --- Gestione Stato Autenticazione ---
+        auth.onAuthStateChanged(async (user) => {
+            appContainer.innerHTML = '<div class="flex items-center justify-center h-32"><div class="spinner"></div><span class="ml-4 text-gray-600">Verifica autenticazione...</span></div>';
+            if (user) {
+                G.currentUser = user;
+                // Determina ruolo in base a UID
+                if (!user.isAnonymous && user.uid === MANAGER_UID) {
+                     G.userRole = 'manager';
                 } else {
-                    showError("Errore Critico", "Impossibile inizializzare l'ambiente. Controlla le impostazioni di Firebase e la console per dettagli.", error); 
+                     G.userRole = 'user'; // Tutti gli altri (inclusi anonimi) sono user
                 }
-            }
-        }
-
-        async function startApp() {
-            showView('loading', 'Caricamento dati...');
-            try {
-                const docRef = doc(G.db, G.PATHS.appData());
-                const docSnap = await getDoc(docRef);
-                G.appData = docSnap.exists() ? docSnap.data() : G.DEFAULT_DATA;
-                G.appData.config = { ...G.DEFAULT_DATA.config, ...G.appData.config };
-                G.appData.pricelist = { ...G.DEFAULT_DATA.pricelist, ...G.appData.pricelist };
-                listenForQuotes();
-                renderCalculatorView();
-            } catch (error) { 
-                console.error("Errore during il caricamento dei dati:", error);
-                showError("Errore Dati", "Impossibile caricare i dati. Accedi come manager, vai in 'Amministrazione' e clicca 'Salva Tutte le Impostazioni' per creare la configurazione iniziale.", error); 
-            }
-        }
-
-        function listenForQuotes() {
-            if (G.unsubscribeQuotes) G.unsubscribeQuotes();
-            const q = collection(G.db, G.PATHS.quotes());
-            G.unsubscribeQuotes = onSnapshot(q, (snap) => {
-                const allQuotes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-                if (G.currentUser) {
-                    G.quotes = G.currentUser.role === 'user' ? allQuotes.filter(q => q.createdBy === G.currentUser.username) : allQuotes;
-                } else {
-                    G.quotes = [];
-                }
-                if (document.getElementById('quotes-archive-list')) renderQuotesArchiveList();
-            }, (error) => { console.error("Realtime quotes error:", error); showError("Errore di Rete", "Impossibile aggiornare i preventivi."); });
-        }
-        
-        async function handleLogin(form) {
-            const username = form.elements.username.value.trim(); const password = form.elements.password.value;
-            const errorEl = form.querySelector('#login-error'); errorEl.textContent = ''; showView('loading', 'Accesso...');
-            if (username === 'manager' && password === 'spina') {
-                G.currentUser = { username: 'manager', role: 'manager' }; 
-                await startApp(); 
-                return;
-            }
-            try {
-                const docRef = doc(G.db, G.PATHS.appData());
-                const docSnap = await getDoc(docRef);
-                const users = (docSnap.exists() && docSnap.data().users) ? docSnap.data().users : [];
-                const user = users.find(u => u.username === username);
-                if (!user || user.password !== btoa(password)) throw new Error('Credenziali non valide.');
-                G.currentUser = { username: user.username, role: 'user' }; 
-                await startApp();
-            } catch (error) { 
-                showView('login'); 
-                const loginErrorEl = document.getElementById('login-error');
-                if (loginErrorEl) loginErrorEl.textContent = error.message; 
-            }
-        }
-        
-        function handleLogout() { 
-            if (G.unsubscribeQuotes) G.unsubscribeQuotes(); 
-            G.currentUser = null; 
-            showView('login'); 
-        }
-        
-        function renderCalculatorView(quoteToEdit = null) {
-            G.editingQuoteId = quoteToEdit ? quoteToEdit.id : null;
-            showView('calculator');
-            const welcomeEl = document.querySelector('#welcome-message');
-            if (welcomeEl && G.currentUser) welcomeEl.textContent = `Benvenuto, ${G.currentUser.username}`;
-            
-            const managerOnlyEl = document.querySelector('.manager-only');
-            if (managerOnlyEl && G.currentUser.role !== 'manager') managerOnlyEl.style.display = 'none';
-
-            const materialSelectEl = document.querySelector('[name="materialId"]');
-            if (materialSelectEl) materialSelectEl.innerHTML = G.appData.materials.map(m => `<option value="${m.id}">${m.name}</option>`).join('') || '<option>Nessun materiale</option>';
-            
-            if (quoteToEdit) {
-                const form = document.getElementById('quote-form');
-                form.elements.clientName.value = quoteToEdit.inputs.clientName;
-                form.elements.jobName.value = quoteToEdit.inputs.jobName;
-                form.elements.width.value = quoteToEdit.inputs.width;
-                form.elements.height.value = quoteToEdit.inputs.height;
-                form.elements.materialId.value = quoteToEdit.inputs.materialId;
-                if (quoteToEdit.inputs.variants) {
-                    form.elements.variants.value = quoteToEdit.inputs.variants;
-                }
-                quoteToEdit.results.forEach((res, index) => { if (form.elements[`quantity${index + 1}`]) form.elements[`quantity${index + 1}`].value = res.quantity; });
-            }
-        }
-
-        function renderAdminView() {
-            showView('admin');
-            const form = document.getElementById('admin-form');
-            Object.keys(G.appData.config).forEach(key => { if(form.elements[key]) form.elements[key].value = G.appData.config[key]; });
-            
-            form.elements.stdWidth.value = G.appData.pricelist.stdWidth;
-            form.elements.stdHeight.value = G.appData.pricelist.stdHeight;
-
-            const stdMatSelect = form.elements.stdMaterialId;
-            stdMatSelect.innerHTML = G.appData.materials.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
-            if (G.appData.pricelist.stdMaterialId) {
-                stdMatSelect.value = G.appData.pricelist.stdMaterialId;
-            }
-
-            form.querySelector('#pricelist-tiers').innerHTML = G.appData.pricelist.tiers.sort((a,b) => a.quantity - b.quantity).map(t => createPricelistTierHtml(t.quantity, t.price)).join('');
-            form.querySelector('#materials-list').innerHTML = G.appData.materials.map(m => createMaterialRowHtml(m.id, m.name, m.price)).join('');
-            renderUsersList();
-        }
-
-        function renderArchiveView() { showView('archive'); renderQuotesArchiveList(); }
-        function renderHelpModal() { const modal = document.getElementById('help-template').content.cloneNode(true); document.body.appendChild(modal); if (G.currentUser && G.currentUser.role === 'manager') document.getElementById('manager-guide-section').classList.remove('hidden'); }
-        
-        function handleSubmits(e) {
-            e.preventDefault();
-            const actions = { 
-                'login-form': () => handleLogin(e.target), 'quote-form': () => handleQuoteFormSubmit(e.target), 
-                'admin-form': () => handleAdminFormSubmit(e.target)
-            };
-            if(actions[e.target.id]) actions[e.target.id]();
-        }
-        
-        function handleClicks(e) {
-            const target = e.target.closest('[data-action]'); if (!target) return;
-            const action = target.dataset.action;
-            const actions = {
-                'logout': handleLogout, 'open-admin': renderAdminView, 'open-archive': renderArchiveView, 'close-admin': renderCalculatorView, 'close-archive': renderCalculatorView,
-                'back-to-calculator': () => { G.editingQuoteId = null; renderCalculatorView(); }, 'edit-quote': () => startEdit(target.dataset.id),
-                'save-or-update-quote': saveOrUpdateQuote, 'add-material-row': addMaterialRow, 'export-backup': exportBackup,
-                'delete-material': () => target.closest('.material-row').remove(), 
-                'delete-user': () => handleDeleteUser(target.dataset.id),
-                'open-help': renderHelpModal, 'close-help': () => document.getElementById('help-modal-backdrop')?.remove(),
-                'add-pricelist-tier': addPricelistTierRow, 'delete-pricelist-tier': () => target.closest('.tier-row').remove(),
-                'add-user': handleAddUser,
-                'create-pdf': printQuote,
-            };
-            if (actions[action]) {
-                actions[action]();
-            }
-        }
-        
-        function handleInputs(e) { if (e.target.id === 'search-client-input') renderQuotesArchiveList(e.target.value); }
-        function handleChanges(e) { if (e.target.id === 'backup-file-input') importBackup(e); }
-        
-        function handleQuoteFormSubmit(form) {
-            const formData = new FormData(form);
-            const baseData = { 
-                clientName: formData.get('clientName'), 
-                jobName: formData.get('jobName'), 
-                width: parseFloat(formData.get('width')), 
-                height: parseFloat(formData.get('height')), 
-                materialId: formData.get('materialId'),
-                variants: parseInt(formData.get('variants')) || 1
-            };
-            const quantities = [1, 2, 3, 4, 5].map(i => parseInt(formData.get(`quantity${i}`))).filter(q => q > 0);
-            if (quantities.length === 0) { alert("Inserire almeno una quantità valida."); return; }
-            const results = quantities.map(quantity => calculateQuote({ ...baseData, quantity }));
-            if (results.some(res => res === null)) { alert("Errore nel calcolo. Controlla che le dimensioni dell'etichetta siano valide e che il materiale di riferimento sia impostato correttamente."); return; }
-            G.currentQuoteData = { inputs: baseData, results: results, createdBy: G.currentUser.username, createdAt: new Date().toISOString() };
-            showView('results');
-            displayQuote(document.getElementById('pdf-content'), G.currentQuoteData);
-        }
-        
-        async function handleAdminFormSubmit(form) {
-            const feedback = document.getElementById('admin-feedback'); feedback.textContent = 'Salvataggio...';
-            const formData = new FormData(form);
-            const newConfig = {};
-            for(let key in G.DEFAULT_DATA.config) newConfig[key] = parseFloat(formData.get(key)) || G.DEFAULT_DATA.config[key];
-            
-            const newPricelist = {
-                stdWidth: parseFloat(formData.get('stdWidth')),
-                stdHeight: parseFloat(formData.get('stdHeight')),
-                stdMaterialId: formData.get('stdMaterialId'),
-                tiers: Array.from(form.querySelectorAll('.tier-row')).map(row => ({
-                    quantity: parseInt(row.querySelector('[name="tier-quantity"]').value),
-                    price: parseFloat(row.querySelector('[name="tier-price"]').value)
-                })).filter(t => t.quantity > 0 && t.price > 0).sort((a,b) => a.quantity - b.quantity)
-            };
-
-            const newMaterials = Array.from(form.querySelectorAll('.material-row')).map(row => ({
-                id: row.dataset.id, name: row.querySelector('[name="material-name"]').value, price: parseFloat(row.querySelector('[name="material-price"]').value)
-            }));
-            try {
-                const newData = { ...G.appData, users: G.appData.users || [], config: newConfig, materials: newMaterials, pricelist: newPricelist };
-                await setDoc(doc(G.db, G.PATHS.appData()), newData);
-                G.appData = newData;
-                feedback.textContent = 'Configurazione salvata!';
-                setTimeout(() => feedback.textContent = '', 2000);
-            } catch (error) { console.error("Save error:", error); feedback.textContent = 'Errore nel salvataggio.'; }
-        }
-
-        async function handleAddUser() {
-            const form = document.getElementById('admin-form');
-            const username = form.elements.newUsername.value.trim();
-            const password = form.elements.newPassword.value;
-            if(!username || !password) { alert("Inserire nome utente e password."); return; }
-            if ( (G.appData.users && G.appData.users.some(u => u.username === username)) || username === 'manager') { alert('Nome utente non valido o già esistente.'); return; }
-            const newUser = { id: `user_${Date.now()}`, username, password: btoa(password) };
-            const newUsers = [...(G.appData.users || []), newUser];
-            try {
-                const docRef = doc(G.db, G.PATHS.appData());
-                const docSnap = await getDoc(docRef);
-                const currentData = docSnap.exists() ? docSnap.data() : G.DEFAULT_DATA;
-                
-                await setDoc(docRef, { ...currentData, users: newUsers });
-                G.appData.users = newUsers;
-                renderUsersList();
-                form.elements.newUsername.value = '';
-                form.elements.newPassword.value = '';
-            } catch (error) { alert("Errore nell'aggiunta dell'utente."); }
-        }
-        async function handleDeleteUser(userId) {
-            if (!confirm('Eliminare questo utente?')) return;
-            const newUsers = G.appData.users.filter(u => u.id !== userId);
-            try {
-                const docRef = doc(G.db, G.PATHS.appData());
-                const docSnap = await getDoc(docRef);
-                const currentData = docSnap.exists() ? docSnap.data() : G.DEFAULT_DATA;
-
-                await setDoc(docRef, { ...currentData, users: newUsers });
-                G.appData.users = newUsers;
-                renderUsersList();
-            } catch (error) { alert("Errore nell'eliminazione dell'utente."); }
-        }
-
-        function calculateVariantSurcharge(variants) {
-            if (!variants || variants <= 1) return 0;
-            const extra = variants - 1;
-            let surcharge = 0;
-            if (extra <= 2) { surcharge = extra * 42; }
-            else if (extra <= 5) { surcharge = (2 * 42) + ((extra - 2) * 30); }
-            else { surcharge = (2 * 42) + (3 * 30) + ((extra - 5) * 25); }
-            return surcharge;
-        }
-
-        function getBasePrice(quantity) {
-            const tiers = G.appData.pricelist.tiers;
-            if (!tiers || tiers.length === 0) return 0;
-            const sortedTiers = [...tiers].sort((a, b) => a.quantity - b.quantity);
-            if (quantity <= sortedTiers[0].quantity) return (sortedTiers[0].price / sortedTiers[0].quantity) * quantity;
-            if (quantity >= sortedTiers[sortedTiers.length - 1].quantity) {
-                const lastTier = sortedTiers[sortedTiers.length - 1];
-                return (lastTier.price / lastTier.quantity) * quantity;
-            }
-            const upperTierIndex = sortedTiers.findIndex(t => t.quantity >= quantity);
-            const upperTier = sortedTiers[upperTierIndex];
-            const lowerTier = sortedTiers[upperTierIndex - 1];
-            const qtyRange = upperTier.quantity - lowerTier.quantity;
-            if (qtyRange === 0) return (lowerTier.price / lowerTier.quantity) * quantity;
-            const priceRange = upperTier.price - lowerTier.price;
-            const qtyRatio = (quantity - lowerTier.quantity) / qtyRange;
-            const interpolatedPrice = lowerTier.price + (priceRange * qtyRatio);
-            return interpolatedPrice;
-        }
-
-        function calculateRealCost(data) {
-            const material = G.appData.materials.find(m => m.id === data.materialId); if (!material) return null;
-            const cfg = { ...G.DEFAULT_DATA.config, ...G.appData.config };
-            if (!data.width || data.width <= 0 || !data.height || data.height <= 0) return null;
-            const pistas=Math.floor(cfg.paperWidth/data.width); if (pistas <= 0) return null;
-            const labelsPerMeter=(1000/(data.height + 3))*pistas; if (labelsPerMeter <= 0) return null;
-            const totalMeters=(data.quantity/labelsPerMeter)+cfg.setupMeters; const totalAreaMq=(totalMeters*cfg.paperWidth)/1000;
-            const tD=totalMeters/cfg.dominoSpeed, tS=totalMeters/cfg.samSpeed, tP=totalMeters/cfg.pratiSpeed;
-            const cD=(tD/60)*cfg.dominoCost, cS=(tS/60)*cfg.samCost; let cP=(tP/60)*cfg.pratiCost; if(cP<cfg.pratiMinCost)cP=cfg.pratiMinCost;
-            const cM=totalAreaMq*material.price; const industrialCost=cD+cS+cP+cM; 
-            return industrialCost * (1 + cfg.margin / 100);
-        }
-
-        function calculateQuote(data) {
-            const plConfig = G.appData.pricelist;
-            if (!plConfig.stdMaterialId || !G.appData.materials.find(m => m.id === plConfig.stdMaterialId)) {
-                return null;
-            }
-            const realCostNew = calculateRealCost(data);
-            const realCostStandard = calculateRealCost({ ...data, width: plConfig.stdWidth, height: plConfig.stdHeight, materialId: plConfig.stdMaterialId });
-            if (realCostStandard === null || realCostNew === null || realCostStandard === 0) return null;
-            const costFactor = realCostNew / realCostStandard;
-            const basePrice = getBasePrice(data.quantity);
-            
-            let finalPrice = basePrice * costFactor;
-            const variantSurcharge = calculateVariantSurcharge(data.variants);
-            finalPrice += variantSurcharge;
-
-            return { quantity: data.quantity, costs: { final: finalPrice, basePrice, costFactor, perThousand: (finalPrice/data.quantity)*1000, perUnit: finalPrice/data.quantity, variantSurcharge }};
-        }
-        
-        function displayQuote(container, d) {
-            if (!container) return;
-            const f = (n, c = 2) => n.toLocaleString('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: c });
-            const isManager = G.currentUser.role === 'manager';
-            const materialName = G.appData.materials.find(m => m.id === d.inputs.materialId)?.name || 'Sconosciuto';
-            const resultsTableHtml = d.results.map(res => `
-                <tr class="border-b">
-                    <td class="p-3 text-center font-medium">${res.quantity.toLocaleString('it-IT')}</td>
-                    ${isManager ? `<td class="p-3 text-center text-sm text-gray-500">${f(res.costs.basePrice)}</td>` : ''}
-                    ${isManager ? `<td class="p-3 text-center text-sm text-orange-600">${res.costs.costFactor.toFixed(2)}x</td>` : ''}
-                    ${isManager ? `<td class="p-3 text-center text-sm text-purple-600">${f(res.costs.variantSurcharge)}</td>` : ''}
-                    <td class="p-3 text-center font-bold text-blue-700">${f(res.costs.final)}</td>
-                    <td class="p-3 text-center text-sm">${f(res.costs.perThousand)}</td>
-                    <td class="p-3 text-center text-sm">${f(res.costs.perUnit, 4)}</td>
-                </tr>`).join('');
-            
-            const saveButton = document.querySelector('[data-action="save-or-update-quote"]');
-            if(saveButton) saveButton.textContent = G.editingQuoteId ? "Aggiorna Preventivo" : "Salva Preventivo";
-
-            container.innerHTML = `
-                <h2 class="text-2xl font-bold mb-1">Preventivo: ${d.inputs.jobName}</h2>
-                <p class="text-gray-600 mb-6">Cliente: ${d.inputs.clientName}</p>
-                <div class="grid grid-cols-3 gap-4 text-sm mb-6">
-                    <span><b>Formato:</b> ${d.inputs.width}x${d.inputs.height}mm</span>
-                    <span><b>Materiale:</b> ${materialName}</span>
-                    <span><b>Varianti:</b> ${d.inputs.variants}</span>
-                </div>
-                <table class="w-full text-left">
-                    <thead><tr class="bg-gray-100">
-                        <th class="p-3 text-center">Quantità</th>
-                        ${isManager ? '<th class="p-3 text-center">Prezzo Base</th>' : ''}
-                        ${isManager ? '<th class="p-3 text-center text-orange-600">Fattore Costo</th>' : ''}
-                        ${isManager ? '<th class="p-3 text-center text-purple-600">Sovr. Varianti</th>' : ''}
-                        <th class="p-3 text-center">Prezzo Finale</th>
-                        <th class="p-3 text-center">Costo / 1000 pz</th>
-                        <th class="p-3 text-center">Costo / pz</th>
-                    </tr></thead>
-                    <tbody>${resultsTableHtml}</tbody>
-                </table>`;
-        }
-        
-        function startEdit(quoteId) {
-            const quoteToEdit = G.quotes.find(q => q.id === quoteId);
-            if (!quoteToEdit) return alert("Preventivo non trovato.");
-            renderCalculatorView(quoteToEdit);
-        }
-        function createMaterialRowHtml(id, name, price) { return `<div class="material-row flex items-center gap-2" data-id="${id||`mat_${Date.now()}`}"><input type="text" name="material-name" value="${name||''}" placeholder="Nome" class="w-2/3 p-2 border rounded-md"><input type="number" step="0.01" name="material-price" value="${price||''}" placeholder="Prezzo (€/mq)" class="w-1/3 p-2 border rounded-md"><button type="button" data-action="delete-material" class="delete-btn text-red-500 hover:text-red-700 p-1">&#10005;</button></div>`; }
-        function addMaterialRow() { document.getElementById('materials-list').insertAdjacentHTML('beforeend', createMaterialRowHtml()); }
-        function createPricelistTierHtml(quantity = '', price = '') { return `<div class="tier-row flex items-center gap-2"><input type="number" name="tier-quantity" value="${quantity}" placeholder="Quantità" class="w-1/2 p-2 border rounded-md"><input type="number" step="0.01" name="tier-price" value="${price}" placeholder="Prezzo Totale (€)" class="w-1/2 p-2 border rounded-md"><button type="button" data-action="delete-pricelist-tier" class="delete-btn text-red-500 hover:text-red-700 p-1">&#10005;</button></div>`; }
-        function addPricelistTierRow() { document.getElementById('pricelist-tiers').insertAdjacentHTML('beforeend', createPricelistTierHtml()); }
-        function renderUsersList() { if(G.currentUser?.role!=='manager' || !document.getElementById('users-list'))return;document.getElementById('users-list').innerHTML=(G.appData.users || []).map(u=>`<div class="flex items-center justify-between bg-gray-50 p-2 rounded"><span>${u.username}</span><button type="button" data-action="delete-user" data-id="${u.id}" class="delete-btn text-red-500 hover:text-red-700 text-xs font-bold">ELIMINA</button></div>`).join('')||'Nessun utente creato.';}
-        function renderQuotesArchiveList(term='') { 
-            const container=document.getElementById('quotes-archive-list'); 
-            if (!container || !G.currentUser) return;
-            const filtered=G.quotes.filter(q=>q.inputs.clientName.toLowerCase().includes(term.toLowerCase())); 
-            if(filtered.length===0){container.innerHTML='<p class="text-center text-gray-500">Nessun preventivo.</p>';return} 
-            container.innerHTML=filtered.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).map(q=>`
-                <div class="border rounded-lg p-3 flex justify-between items-center hover:bg-gray-50">
-                    <div>
-                        <p class="font-semibold">${q.inputs.clientName} - <span class="font-normal">${q.inputs.jobName}</span></p>
-                        <p class="text-sm text-gray-500">${new Date(q.createdAt).toLocaleDateString('it-IT')}</p>
-                    </div>
-                    <div class="text-right flex items-center">
-                        <div>
-                            <p class="font-bold text-lg">${q.results[0].costs.final.toLocaleString('it-IT',{style:'currency',currency:'EUR'})}</p>
-                            ${G.currentUser.role==='manager'?`<p class="text-xs text-gray-500">Da: ${q.createdBy}</p>`:''}
-                        </div>
-                        <button data-action="edit-quote" data-id="${q.id}" class="ml-4 text-blue-600 hover:underline text-xs font-semibold">Modifica</button>
-                    </div>
-                </div>`).join('');
-        }
-        
-        function printQuote() {
-            const printContent = document.getElementById('pdf-content');
-            if (!printContent) {
-                alert("Errore: Impossibile trovare il contenuto da stampare.");
-                return;
-            }
-
-            const printWindow = window.open('', '_blank', 'width=800,height=600');
-            if (!printWindow) {
-                alert("Stampa bloccata! Per favore, consenti i pop-up per questo sito e riprova.");
-                return;
-            }
-
-            // 1. Copia i link ai fogli di stile
-            let docHead = '';
-            document.head.querySelectorAll('link[rel="stylesheet"]').forEach(el => {
-                docHead += el.outerHTML;
-            });
-
-            // 2. Copia TUTTI gli stili <style> generati da Tailwind e quelli custom
-            document.head.querySelectorAll('style').forEach(el => {
-                docHead += `<style>${el.innerHTML}</style>`;
-            });
-            
-            // 3. Aggiungi lo script di Tailwind
-            docHead += '<script src="https://cdn.tailwindcss.com"><\/script>';
-
-            printWindow.document.write(`
-                <html>
-                    <head>
-                        <title>Stampa Preventivo</title>
-                        ${docHead}
-                        <style>
-                            body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-                        </style>
-                    </head>
-                    <body class="bg-white p-8">
-                        ${printContent.innerHTML}
-                        <script>
-                            window.onload = function() {
-                                // Attendi che il browser sia pronto a disegnare (paint)
-                                requestAnimationFrame(function() { 
-                                    window.focus(); 
-                                    window.print();
-                                    window.close(); 
-                                });
-                            };
-                        <\/script>
-                    </body>
-                </html>
-            `);
-            
-            printWindow.document.close();
-        }
-
-        function exportBackup() {
-            const dataToExport = {
-                config: G.appData.config,
-                materials: G.appData.materials.map(({ id, ...rest }) => rest),
-                pricelist: G.appData.pricelist,
-                users: G.appData.users
-            };
-            const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' });
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            a.download = `backup_${new Date().toISOString().split('T')[0]}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(a.href);
-        }
-
-        async function importBackup(e) {
-            const f = e.target.files[0]; if (!f) return;
-            const r = new FileReader();
-            r.onload = async () => {
+                console.log("Stato Auth cambiato - Utente:", user.email || user.uid, "Anonimo:", user.isAnonymous, "Ruolo:", G.userRole);
                 try {
-                    const d = JSON.parse(r.result);
-                    if (d.config && d.materials && d.pricelist) {
-                        const newMaterials = d.materials.map(m => ({ ...m, id: m.id || `mat_${Date.now()}_${Math.random()}`.replace('.','') }));
-                        const newConfig = { ...G.DEFAULT_DATA.config, ...d.config };
-                        const newPricelist = { ...G.DEFAULT_DATA.pricelist, ...d.pricelist };
-                        const newUsers = d.users || [];
-                        const newData = { ...G.appData, config: newConfig, materials: newMaterials, pricelist: newPricelist, users: newUsers };
-                        showView('loading', "Salvataggio backup...");
-                        await setDoc(doc(G.db, G.PATHS.appData()), newData);
-                        G.appData = newData;
-                        renderAdminView();
-                        alert('Backup importato e salvato con successo.');
-                    } else { throw new Error('File di backup non valido o incompleto.'); }
-                } catch (err) {
-                    alert(`Errore during l'importazione: ${err.message}`);
-                    renderAdminView(); 
+                    await loadInitialData(); // Attende caricamento configurazione
+                    showView('calculator');
+                } catch(err) {
+                     console.error("Errore fatale durante loadInitialData:", err);
+                     showView('login'); // Torna al login in caso di errore critico
+                     alert("Errore nel caricamento della configurazione iniziale. Impossibile avviare l'app.");
                 }
-            };
-            r.readAsText(f);
+            } else {
+                G.currentUser = null;
+                G.userRole = 'user';
+                console.log("Utente sloggato.");
+                showView('login');
+            }
+        });
+
+        // --- Caricamento Dati Iniziali da Firestore ---
+        async function loadInitialData() {
+            console.log("Caricamento/Ascolto dati iniziali da Firestore...");
+            const configDocRef = db.collection('config').doc('main');
+
+             return new Promise((resolve, reject) => {
+                 if (G.configListener) G.configListener(); // Stacca listener precedente
+
+                 G.configListener = configDocRef.onSnapshot(doc => {
+                     let needsUpdate = false; // Flag per aggiornare UI solo se necessario
+                     const oldAppData = JSON.stringify(G.appData); // Salva stato precedente
+
+                     if (doc.exists) {
+                        const data = doc.data();
+                        G.appData.config = { ...G.DEFAULT_DATA.config, ...(data.settings || {}) };
+                        G.appData.pricelist = { ...G.DEFAULT_DATA.pricelist, ...(data.pricelist || {}) };
+                        G.appData.pricelist.tiers = Array.isArray(G.appData.pricelist.tiers) && G.appData.pricelist.tiers.length > 0 ? G.appData.pricelist.tiers : G.DEFAULT_DATA.pricelist.tiers;
+                        G.appData.materials = Array.isArray(data.materials) && data.materials.length > 0 ? data.materials : G.DEFAULT_DATA.materials;
+                        console.log("Configurazione caricata/aggiornata da Firestore.");
+                     } else {
+                         console.warn("Documento config/main non trovato, uso i default e tento creazione.");
+                         G.appData = JSON.parse(JSON.stringify(G.DEFAULT_DATA)); // Copia profonda
+                         needsUpdate = true; // Forza aggiornamento UI con default
+                         configDocRef.set({
+                             settings: G.DEFAULT_DATA.config,
+                             pricelist: G.DEFAULT_DATA.pricelist,
+                             materials: G.DEFAULT_DATA.materials
+                         }).then(() => console.log("Documento config di default creato."))
+                           .catch(err => console.error("Errore nel creare config di default:", err));
+                     }
+
+                     // Controlla se i dati sono effettivamente cambiati prima di aggiornare UI
+                     if (JSON.stringify(G.appData) !== oldAppData || needsUpdate) {
+                         console.log("Dati AppData cambiati, aggiorno UI se necessario...");
+                         const currentView = appContainer.querySelector('form')?.id || appContainer.querySelector('div[id]')?.id?.replace('-template','');
+                         if (currentView === 'quote-form' || currentView === 'calculator-template') initCalculatorView(null, true); // Flag per evitare reset form
+                         if (currentView === 'admin-form' || currentView === 'admin-template') initAdminView();
+                     }
+                     resolve(); // Risolvi la Promise al primo caricamento/aggiornamento
+
+                 }, error => {
+                      console.error("Errore grave nell'ascolto della configurazione:", error);
+                      G.appData = JSON.parse(JSON.stringify(G.DEFAULT_DATA)); // Fallback
+                      reject(error); // Rigetta per segnalare errore all'avvio
+                 });
+             });
         }
-        
-        async function saveOrUpdateQuote(){
-            if(!G.db||!G.currentQuoteData)return;
-            const saveButton = document.querySelector('[data-action="save-or-update-quote"]');
-            saveButton.disabled = true;
-            saveButton.textContent = G.editingQuoteId ? 'Aggiornamento...' : 'Salvataggio...';
-            try{
-                if (G.editingQuoteId) {
-                    const docRef = doc(G.db, G.PATHS.quotes(), G.editingQuoteId);
-                    await setDoc(docRef, { ...G.currentQuoteData, id: G.editingQuoteId });
+
+         // --- Inizializzazione Viste Specifiche ---
+        function initLoginView() {
+            const loginForm = document.getElementById('login-form');
+            if (loginForm) {
+                 loginForm.removeEventListener('submit', handleLoginSubmit);
+                 loginForm.addEventListener('submit', handleLoginSubmit);
+            }
+             const anonButton = document.querySelector('[data-action="login-anonymous"]');
+             if (anonButton) {
+                 anonButton.removeEventListener('click', handleAnonymousLogin);
+                 anonButton.addEventListener('click', handleAnonymousLogin);
+             }
+        }
+
+        function initCalculatorView(quoteToEdit = null, isUpdate = false) {
+            if (!G.currentUser) return showView('login');
+            const welcomeMsg = document.querySelector('#welcome-message');
+            if (welcomeMsg) welcomeMsg.textContent = `Benvenuto, ${G.currentUser.isAnonymous ? 'Ospite' : (G.currentUser.email || G.currentUser.uid)}`;
+            const adminButton = document.querySelector('[data-action="open-admin"]');
+            if (adminButton) adminButton.style.display = G.userRole === 'manager' ? 'inline-block' : 'none';
+            const materialSelectEl = document.querySelector('[name="materialId"]');
+            if (materialSelectEl) {
+                 const currentValue = materialSelectEl.value;
+                 materialSelectEl.innerHTML = '<option value="">-- Seleziona Materiale --</option>' + (G.appData.materials || []).map(m => `<option value="${m.id}">${m.name} (${(m.price ?? 0).toFixed(2)}€/mq)</option>`).join('');
+                 if (currentValue && G.appData.materials.find(m => m.id === currentValue)) materialSelectEl.value = currentValue; // Ripristina solo se ancora valido
+                 else if (quoteToEdit?.inputs?.materialId) materialSelectEl.value = quoteToEdit.inputs.materialId; // Usa quello del preventivo in modifica
+            }
+            const form = document.getElementById('quote-form');
+             if (!form) return;
+             if (!isUpdate) { // Popola solo se NON è un aggiornamento da listener
+                if (quoteToEdit) {
+                    G.editingQuoteId = quoteToEdit.id;
+                    form.elements.clientName.value = quoteToEdit.inputs?.clientName || '';
+                    form.elements.jobName.value = quoteToEdit.inputs?.jobName || '';
+                    form.elements.width.value = quoteToEdit.inputs?.width || '';
+                    form.elements.height.value = quoteToEdit.inputs?.height || '';
+                    if (materialSelectEl && quoteToEdit.inputs?.materialId) materialSelectEl.value = quoteToEdit.inputs.materialId; // Assicura che il select sia popolato
+                    form.elements.variants.value = quoteToEdit.inputs?.variants || 1;
+                    for (let i = 1; i <= 5; i++) { if (form.elements[`quantity${i}`]) form.elements[`quantity${i}`].value = ''; }
+                    quoteToEdit.results?.forEach((res, index) => { if (form.elements[`quantity${index + 1}`]) form.elements[`quantity${index + 1}`].value = res.quantity; });
                 } else {
-                    const docRef = await addDoc(collection(G.db, G.PATHS.quotes()), G.currentQuoteData);
-                    const newId = docRef.id;
-                    await setDoc(docRef, { ...G.currentQuoteData, id: newId });
-                    G.currentQuoteData.id = newId; 
+                    G.editingQuoteId = null;
                 }
-                G.editingQuoteId = null;
-                saveButton.textContent = 'Salvato!';
-                saveButton.classList.remove('bg-blue-600');
-                saveButton.classList.add('bg-green-600');
-                setTimeout(() => renderCalculatorView(), 1500);
-            }catch(e){
-                console.error(e);
-                saveButton.textContent = 'Errore!';
-                saveButton.classList.add('bg-red-600');
-                setTimeout(() => {
-                    saveButton.disabled = false;
-                    saveButton.textContent = "Salva";
-                    saveButton.classList.remove('bg-red-600');
-                }, 2000);
+             }
+            form.removeEventListener('submit', handleQuoteFormSubmit);
+            form.addEventListener('submit', handleQuoteFormSubmit);
+        }
+
+        function initAdminView() {
+            if (G.userRole !== 'manager') return showView('calculator');
+            const form = document.getElementById('admin-form');
+            if (!form) return;
+             try {
+                Object.keys(G.DEFAULT_DATA.config).forEach(key => { // Itera sui default per sicurezza
+                     if(form.elements[key]) form.elements[key].value = G.appData.config?.[key] ?? G.DEFAULT_DATA.config[key];
+                });
+                form.elements.stdHeight.value = G.appData.pricelist?.stdHeight ?? G.DEFAULT_DATA.pricelist.stdHeight;
+                form.elements.stdWidth.value = G.appData.pricelist?.stdWidth ?? G.DEFAULT_DATA.pricelist.stdWidth;
+                const stdMatSelect = form.elements.stdMaterialId;
+                const materials = G.appData.materials?.length > 0 ? G.appData.materials : G.DEFAULT_DATA.materials;
+                 stdMatSelect.innerHTML = materials.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+                 const currentStdMatId = G.appData.pricelist?.stdMaterialId ?? G.DEFAULT_DATA.pricelist.stdMaterialId;
+                 stdMatSelect.value = materials.find(m => m.id === currentStdMatId) ? currentStdMatId : (materials[0]?.id || '');
+
+                form.querySelector('#pricelist-tiers').innerHTML = (G.appData.pricelist?.tiers ?? G.DEFAULT_DATA.pricelist.tiers).sort((a,b) => a.quantity - b.quantity).map(t => createPricelistTierHtml(t.quantity, t.price)).join('');
+                form.querySelector('#materials-list').innerHTML = (G.appData.materials ?? G.DEFAULT_DATA.materials).map(m => createMaterialRowHtml(m.id, m.name, m.price)).join('');
+            } catch (error) { console.error("Errore rendering form admin:", error); alert("Errore caricamento dati admin."); }
+            form.removeEventListener('submit', handleAdminFormSubmit); form.addEventListener('submit', handleAdminFormSubmit);
+            const exportBtn = form.querySelector('[data-action="export-backup"]');
+            const importInput = form.querySelector('#backup-file-input');
+             if (exportBtn) { exportBtn.removeEventListener('click', exportBackup); exportBtn.addEventListener('click', exportBackup); }
+             if (importInput) { importInput.removeEventListener('change', importBackup); importInput.addEventListener('change', importBackup); }
+        }
+
+        function initArchiveView() {
+            if (!G.currentUser) return showView('login');
+            renderQuotesArchiveList();
+            const searchInput = document.getElementById('search-client-input');
+            if (searchInput) { searchInput.removeEventListener('input', handleArchiveSearchInput); searchInput.addEventListener('input', handleArchiveSearchInput); }
+            listenForQuotesChanges();
+        }
+         function handleArchiveSearchInput(e) { renderQuotesArchiveList(e.target.value); }
+
+         function initResultsView() {
+            if (!G.currentQuoteData) return showView('calculator');
+             const pdfContent = document.getElementById('pdf-content');
+             if(pdfContent) displayQuote(pdfContent, G.currentQuoteData);
+            const saveBtn = document.querySelector('[data-action="save-or-update-quote"]');
+            const printBtn = document.querySelector('[data-action="create-pdf"]');
+             if (saveBtn) { saveBtn.removeEventListener('click', saveOrUpdateQuote); saveBtn.addEventListener('click', saveOrUpdateQuote); }
+             if (printBtn) { printBtn.removeEventListener('click', printQuote); printBtn.addEventListener('click', printQuote); }
+        }
+
+        // --- Gestione Login/Logout ---
+        async function handleLoginSubmit(e) {
+             e.preventDefault(); const form = e.target; const emailInput = form.elements.email; const passwordInput = form.elements.password; const errorEl = form.querySelector('#login-error'); errorEl.textContent = ''; const email = emailInput.value.trim(); const password = passwordInput.value; if (!email || !password) { errorEl.textContent = 'Inserisci email e password.'; return; } const submitButton = form.querySelector('button[type="submit"]'); submitButton.disabled = true; submitButton.textContent = 'Accesso...';
+             try {
+                 await auth.signInWithEmailAndPassword(email, password);
+                 // Ruolo determinato da onAuthStateChanged
+                 console.log("Login Email/Password OK:", email);
+             } catch (error) {
+                 console.error("Errore login:", error.code, error.message); let userMessage = 'Email o password errati.'; if (error.code === 'auth/invalid-email') userMessage = 'Formato email non valido.'; else if (error.code === 'auth/too-many-requests') userMessage = 'Troppi tentativi. Riprova più tardi.'; else if (error.code === 'auth/invalid-credential') userMessage = 'Credenziali non valide.'; errorEl.textContent = userMessage; submitButton.disabled = false; submitButton.textContent = 'Entra con Email';
+             }
+        }
+        async function handleAnonymousLogin() {
+            const errorEl = document.querySelector('#login-error');
+            const anonButton = document.querySelector('[data-action="login-anonymous"]');
+            if (anonButton) { anonButton.disabled = true; anonButton.textContent = 'Accesso Ospite...'; }
+            if(errorEl) errorEl.textContent = '';
+            try {
+                await auth.signInAnonymously();
+                console.log("Accesso Anonimo Riuscito.");
+            } catch (error) {
+                console.error("Errore accesso anonimo:", error); if(errorEl) errorEl.textContent = 'Impossibile accedere come ospite.'; if (anonButton) { anonButton.disabled = false; anonButton.textContent = 'Entra come Ospite'; }
             }
         }
-        
-        document.addEventListener('DOMContentLoaded', main);
+        async function handleLogout() { if (G.configListener) G.configListener(); if (G.quotesListener) G.quotesListener(); G.quotesCache = []; try { await auth.signOut(); console.log("Logout OK."); } catch (error) { console.error("Errore logout:", error); alert("Errore logout."); } }
+
+        // --- Logica Calcolo (Funzioni pure, non cambiano) ---
+        function calculateVariantSurcharge(variants) { if (!variants || variants <= 1) return 0; const extra = variants - 1; let surcharge = 0; if (extra <= 2) { surcharge = extra * 42; } else if (extra <= 5) { surcharge = (2 * 42) + ((extra - 2) * 30); } else { surcharge = (2 * 42) + (3 * 30) + ((extra - 5) * 25); } return surcharge; }
+        function getBasePrice(quantity) { const tiers = G.appData.pricelist?.tiers; if (!tiers || tiers.length === 0) return NaN; const sortedTiers = [...tiers].sort((a, b) => a.quantity - b.quantity); if (isNaN(quantity) || quantity <= 0) return NaN; const firstTier = sortedTiers[0]; if (quantity <= firstTier.quantity) { if(firstTier.quantity <= 0) return NaN; return (firstTier.price / firstTier.quantity) * quantity; } const lastTier = sortedTiers[sortedTiers.length - 1]; if (quantity >= lastTier.quantity) { if(lastTier.quantity <= 0) return NaN; return (lastTier.price / lastTier.quantity) * quantity; } const upperTierIndex = sortedTiers.findIndex(t => t.quantity >= quantity); if (upperTierIndex <= 0) return NaN; const upperTier = sortedTiers[upperTierIndex]; const lowerTier = sortedTiers[upperTierIndex - 1]; const qtyRange = upperTier.quantity - lowerTier.quantity; if (qtyRange <= 0) { if(lowerTier.quantity <= 0) return NaN; return (lowerTier.price / lowerTier.quantity) * quantity; } const priceRange = upperTier.price - lowerTier.price; const qtyRatio = (quantity - lowerTier.quantity) / qtyRange; const interpolatedPrice = lowerTier.price + (priceRange * qtyRatio); return interpolatedPrice; }
+        function calculateRealCost(data) { const material = G.appData.materials?.find(m => m.id === data.materialId); if (!material || typeof material.price !== 'number') return null; const cfg = G.appData.config; if (!cfg || Object.keys(cfg).length === 0) return null; if (!data.width || data.width <= 0 || !data.height || data.height <= 0 || !data.quantity || data.quantity <= 0) return null; const pistas = Math.floor(cfg.paperWidth / data.width); if (pistas <= 0) return null; const labelHeightWithGap = data.height + 3; if (labelHeightWithGap <= 0) return null; const labelsPerMeterLinear = 1000 / labelHeightWithGap; const labelsPerMeter = labelsPerMeterLinear * pistas; if (labelsPerMeter <= 0) return null; const totalMeters = (data.quantity / labelsPerMeter) + (cfg.setupMeters || 0); const totalAreaMq = (totalMeters * cfg.paperWidth) / 1000; const tD = (cfg.dominoSpeed > 0) ? totalMeters / cfg.dominoSpeed : 0; const tS = (cfg.samSpeed > 0) ? totalMeters / cfg.samSpeed : 0; const tP = (cfg.pratiSpeed > 0) ? totalMeters / cfg.pratiSpeed : 0; const cD = (tD / 60) * (cfg.dominoCost || 0); const cS = (tS / 60) * (cfg.samCost || 0); let cP = (tP / 60) * (cfg.pratiCost || 0); if(cP < (cfg.pratiMinCost || 0)) cP = (cfg.pratiMinCost || 0); const cM = totalAreaMq * material.price; const industrialCost = cD + cS + cP + cM; if (isNaN(industrialCost)) return null; const finalRealCost = industrialCost * (1 + (cfg.margin || 0) / 100); return isNaN(finalRealCost) ? null : finalRealCost; }
+        function calculateQuote(data) { const plConfig = G.appData.pricelist; if (!plConfig || !plConfig.stdMaterialId || !G.appData.materials?.find(m => m.id === plConfig.stdMaterialId) || !plConfig.stdWidth || !plConfig.stdHeight) return null; const realCostNew = calculateRealCost(data); if (realCostNew === null) return null; const standardData = { ...data, width: plConfig.stdWidth, height: plConfig.stdHeight, materialId: plConfig.stdMaterialId }; const realCostStandard = calculateRealCost(standardData); if (realCostStandard === null || realCostStandard === 0) return null; const costFactor = realCostNew / realCostStandard; if (isNaN(costFactor)) return null; const basePrice = getBasePrice(data.quantity); if (isNaN(basePrice)) return null; let finalPrice = basePrice * costFactor; const variantSurcharge = calculateVariantSurcharge(data.variants); finalPrice += variantSurcharge; if (isNaN(finalPrice)) return null; return { quantity: data.quantity, costs: { final: finalPrice, basePrice: basePrice, costFactor: costFactor, perThousand: (finalPrice / data.quantity) * 1000, perUnit: finalPrice / data.quantity, variantSurcharge: variantSurcharge } }; }
+
+        // --- Gestione Submit Forms ---
+        function handleQuoteFormSubmit(e) { e.preventDefault(); const form = e.target; const formData = new FormData(form); const baseData = { clientName: formData.get('clientName').trim(), jobName: formData.get('jobName').trim(), width: parseFloat(formData.get('width')), height: parseFloat(formData.get('height')), materialId: formData.get('materialId'), variants: parseInt(formData.get('variants')) || 1 }; const quantities = [1, 2, 3, 4, 5].map(i => parseInt(formData.get(`quantity${i}`))).filter(q => !isNaN(q) && q > 0); if (quantities.length === 0 || !baseData.clientName || !baseData.jobName || !baseData.materialId) { alert("Compila tutti i campi richiesti (Cliente, Lavoro, Materiale, almeno una Quantità)."); return; } const results = quantities.map(quantity => calculateQuote({ ...baseData, quantity })); if (results.some(res => res === null)) { alert("Errore nel calcolo. Controlla dati e configurazione."); return; } G.currentQuoteData = { inputs: baseData, results: results, createdBy: G.currentUser.uid, creatorEmail: G.currentUser.email || 'anonimo', createdAt: firebase.firestore.FieldValue.serverTimestamp() }; showView('results'); }
+        async function handleAdminFormSubmit(e) { e.preventDefault(); if (G.userRole !== 'manager') return; const form = e.target; const feedback = document.getElementById('admin-feedback'); feedback.textContent = 'Salvataggio...'; feedback.className = 'h-5 text-center font-medium text-gray-500'; try { const formData = new FormData(form); const newConfig = {}; for(let key in G.DEFAULT_DATA.config) { newConfig[key] = parseFloat(formData.get(key)); if (isNaN(newConfig[key])) throw new Error(`Valore non valido per ${key}`); } const newPricelist = { stdWidth: parseFloat(formData.get('stdWidth')), stdHeight: parseFloat(formData.get('stdHeight')), stdMaterialId: formData.get('stdMaterialId'), tiers: Array.from(form.querySelectorAll('.tier-row')).map(row => ({ quantity: parseInt(row.querySelector('[name="tier-quantity"]').value), price: parseFloat(row.querySelector('[name="tier-price"]').value) })).filter(t => !isNaN(t.quantity) && t.quantity > 0 && !isNaN(t.price) && t.price >= 0).sort((a,b) => a.quantity - b.quantity) }; if (isNaN(newPricelist.stdWidth) || newPricelist.stdWidth <=0) throw new Error("Larghezza std non valida."); if (isNaN(newPricelist.stdHeight) || newPricelist.stdHeight <=0) throw new Error("Altezza std non valida."); if (!newPricelist.stdMaterialId) throw new Error("Materiale riferimento mancante."); if (newPricelist.tiers.length === 0) throw new Error("Il listino deve avere almeno uno scaglione."); const newMaterials = Array.from(form.querySelectorAll('.material-row')).map(row => ({ id: row.dataset.id || `mat_${Date.now()}_${Math.random().toString(16).slice(2)}`, name: row.querySelector('[name="material-name"]').value.trim(), price: parseFloat(row.querySelector('[name="material-price"]').value) })).filter(m => m.name && !isNaN(m.price) && m.price >= 0); if (newMaterials.length === 0) throw new Error("Definire almeno un materiale."); if (!newMaterials.find(m => m.id === newPricelist.stdMaterialId)) { const fallbackMat = newMaterials[0]; alert(`Attenzione: Materiale rif. "${newPricelist.stdMaterialId}" non trovato. Impostato "${fallbackMat.name}".`); newPricelist.stdMaterialId = fallbackMat.id; } await db.collection('config').doc('main').set({ settings: newConfig, pricelist: newPricelist, materials: newMaterials }); feedback.textContent = 'Configurazione salvata!'; feedback.className = 'h-5 text-center font-medium text-green-500'; setTimeout(() => feedback.textContent = '', 3000); } catch (error) { console.error("Errore salvataggio config:", error); feedback.textContent = `Errore: ${error.message}`; feedback.className = 'h-5 text-center font-medium text-red-500'; } }
+
+        // --- Salvataggio/Aggiornamento Preventivi ---
+        async function saveOrUpdateQuote() { if (!G.currentQuoteData || !G.currentUser) return; const saveButton = document.querySelector('[data-action="save-or-update-quote"]'); if (!saveButton) return; saveButton.disabled = true; saveButton.textContent = G.editingQuoteId ? 'Aggiornamento...' : 'Salvataggio...'; saveButton.className = 'w-full bg-gray-400 text-white font-bold py-3 rounded-lg cursor-not-allowed'; try { const quoteDataToSave = JSON.parse(JSON.stringify(G.currentQuoteData)); if (G.editingQuoteId) { delete quoteDataToSave.id; delete quoteDataToSave.createdAt; quoteDataToSave.updatedAt = firebase.firestore.FieldValue.serverTimestamp(); await db.collection('quotes').doc(G.editingQuoteId).update(quoteDataToSave); } else { quoteDataToSave.createdAt = firebase.firestore.FieldValue.serverTimestamp(); await db.collection('quotes').add(quoteDataToSave); } G.editingQuoteId = null; G.currentQuoteData = null; saveButton.textContent = 'Salvato!'; saveButton.className = 'w-full bg-green-600 text-white font-bold py-3 rounded-lg'; setTimeout(() => showView('calculator'), 1500); } catch (error) { console.error("Errore save/update preventivo:", error); alert(`Errore: ${error.message}`); saveButton.disabled = false; saveButton.textContent = G.editingQuoteId ? 'Aggiorna Preventivo' : 'Salva Preventivo'; saveButton.className = 'w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700'; } }
+
+        // --- Funzioni Helper UI ---
+        function displayQuote(container, d) { if (!container || !d?.inputs || !d?.results) return; const f = (n, c = 2) => (typeof n === 'number' && !isNaN(n)) ? n.toLocaleString('it-IT', { style: 'currency', currency: 'EUR', minimumFractionDigits: c }) : 'N/A'; const isManager = G.userRole === 'manager'; const materialName = G.appData.materials?.find(m => m.id === d.inputs.materialId)?.name || d.inputs.materialId || 'Sconosciuto'; const resultsTableHtml = d.results.map(res => ` <tr class="border-b"> <td class="p-3 text-center font-medium">${res.quantity?.toLocaleString('it-IT') || '?'}</td> ${isManager ? `<td class="p-3 text-center text-sm text-gray-500">${f(res.costs?.basePrice)}</td>` : ''} ${isManager ? `<td class="p-3 text-center text-sm text-orange-600">${res.costs?.costFactor?.toFixed(2) || 'N/A'}x</td>` : ''} ${isManager ? `<td class="p-3 text-center text-sm text-purple-600">${f(res.costs?.variantSurcharge)}</td>` : ''} <td class="p-3 text-center font-bold text-blue-700">${f(res.costs?.final)}</td> <td class="p-3 text-center text-sm">${f(res.costs?.perThousand)}</td> <td class="p-3 text-center text-sm">${f(res.costs?.perUnit, 4)}</td> </tr>`).join(''); const saveButton = document.querySelector('[data-action="save-or-update-quote"]'); if(saveButton) { saveButton.textContent = G.editingQuoteId ? "Aggiorna Preventivo" : "Salva Preventivo"; saveButton.className = 'w-full bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700'; saveButton.disabled = false; } container.innerHTML = ` <h2 class="text-2xl font-bold mb-1">Preventivo: ${d.inputs.jobName || 'N/D'}</h2> <p class="text-gray-600 mb-6">Cliente: ${d.inputs.clientName || 'N/D'}</p> <div class="grid grid-cols-3 gap-4 text-sm mb-6"> <span><b>Formato:</b> ${d.inputs.width || '?'}x${d.inputs.height || '?'}mm</span> <span><b>Materiale:</b> ${materialName}</span> <span><b>Varianti:</b> ${d.inputs.variants || 1}</span> </div> <table class="w-full text-left"> <thead><tr class="bg-gray-100"> <th class="p-3 text-center">Quantità</th> ${isManager ? '<th class="p-3 text-center">Prezzo Base</th>' : ''} ${isManager ? '<th class="p-3 text-center text-orange-600">Fattore Costo</th>' : ''} ${isManager ? '<th class="p-3 text-center text-purple-600">Sovr. Varianti</th>' : ''} <th class="p-3 text-center">Prezzo Finale</th> <th class="p-3 text-center">Costo / 1000 pz</th> <th class="p-3 text-center">Costo / pz</th> </tr></thead> <tbody>${resultsTableHtml}</tbody> </table>`; }
+        function createMaterialRowHtml(id = '', name = '', price = '') { const newId = id || `mat_${Date.now()}_${Math.random().toString(16).slice(2)}`; return `<div class="material-row flex items-center gap-2" data-id="${newId}"><input type="text" name="material-name" value="${name || ''}" placeholder="Nome Materiale" class="w-2/3 p-2 border rounded-md" required><input type="number" step="0.01" name="material-price" value="${price ?? ''}" placeholder="Prezzo (€/mq)" class="w-1/3 p-2 border rounded-md" required min="0"><button type="button" data-action="delete-material" class="delete-btn text-red-500 hover:text-red-700 p-1 no-print">&#10005;</button></div>`; }
+        function addMaterialRow() { const list = document.getElementById('materials-list'); if(list) list.insertAdjacentHTML('beforeend', createMaterialRowHtml()); }
+        function createPricelistTierHtml(quantity = '', price = '') { return `<div class="tier-row flex items-center gap-2"><input type="number" name="tier-quantity" value="${quantity || ''}" placeholder="Quantità Minima" class="w-1/2 p-2 border rounded-md" required min="1"><input type="number" step="0.01" name="tier-price" value="${price ?? ''}" placeholder="Prezzo Totale (€)" class="w-1/2 p-2 border rounded-md" required min="0"><button type="button" data-action="delete-pricelist-tier" class="delete-btn text-red-500 hover:text-red-700 p-1 no-print">&#10005;</button></div>`; }
+        function addPricelistTierRow() { const list = document.getElementById('pricelist-tiers'); if (list) list.insertAdjacentHTML('beforeend', createPricelistTierHtml()); }
+        function printQuote() { const printContent = document.getElementById('pdf-content'); if (!printContent) return alert("Errore: Contenuto da stampare non trovato."); const printWindow = window.open('', '_blank', 'width=800,height=600'); if (!printWindow) return alert("Stampa bloccata! Consenti i pop-up."); let docHead = ''; document.head.querySelectorAll('link[rel="stylesheet"]').forEach(el => docHead += el.outerHTML); document.head.querySelectorAll('style').forEach(el => docHead += `<style>${el.innerHTML}</style>`); docHead += '<script src="https://cdn.tailwindcss.com"><\/script>'; printWindow.document.write(`<html><head><title>Stampa Preventivo</title>${docHead}<style>body{-webkit-print-color-adjust: exact; print-color-adjust: exact;}</style></head><body class="bg-white p-8">${printContent.innerHTML}<script>window.onload=function(){setTimeout(function(){requestAnimationFrame(function(){window.focus();window.print();window.close();});}, 600);};<\/script></body></html>`); printWindow.document.close(); }
+
+        // --- Funzioni Archivio ---
+        function listenForQuotesChanges() { if (!G.currentUser) return; if (G.quotesListener) G.quotesListener(); console.log("Avvio listener preventivi..."); let query = db.collection('quotes').orderBy('createdAt', 'desc'); G.quotesListener = query.onSnapshot(snapshot => { G.quotesCache = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); console.log("Cache preventivi aggiornata da Firestore:", G.quotesCache.length); if (document.getElementById('quotes-archive-list')) renderQuotesArchiveList(document.getElementById('search-client-input')?.value || ''); }, error => { console.error("Errore listener preventivi:", error); alert("Errore caricamento archivio."); }); }
+        function renderQuotesArchiveList(term = '') { const container = document.getElementById('quotes-archive-list'); if (!container || !G.currentUser) return; const searchTerm = term.toLowerCase(); const filteredQuotes = G.quotesCache.filter(q => { const isVisible = G.userRole === 'manager' || q.createdBy === G.currentUser.uid; return isVisible && q.inputs?.clientName?.toLowerCase().includes(searchTerm); }); container.innerHTML = filteredQuotes.length === 0 ? '<p class="text-center text-gray-500">Nessun preventivo trovato.</p>' : filteredQuotes.map(q => { const createdAtDate = q.createdAt?.toDate ? q.createdAt.toDate() : (q.createdAt ? new Date(q.createdAt) : new Date(0)); const firstResultPrice = q.results?.[0]?.costs?.final; return ` <div class="border rounded-lg p-3 flex justify-between items-center hover:bg-gray-50"> <div> <p class="font-semibold">${q.inputs?.clientName || 'N/D'} - <span class="font-normal">${q.inputs?.jobName || 'N/D'}</span></p> <p class="text-sm text-gray-500">${createdAtDate.toLocaleDateString('it-IT')}</p> </div> <div class="text-right flex items-center"> <div> <p class="font-bold text-lg">${(typeof firstResultPrice === 'number') ? firstResultPrice.toLocaleString('it-IT',{style:'currency',currency:'EUR'}) : 'N/A'}</p> ${G.userRole === 'manager' && q.createdBy !== G.currentUser.uid ? `<p class="text-xs text-gray-500">Da: ${q.creatorEmail || q.createdBy.substring(0,6)}...</p>` : ''} </div> <button data-action="edit-quote" data-id="${q.id}" class="ml-4 text-blue-600 hover:underline text-xs font-semibold no-print">Modifica</button> ${G.userRole === 'manager' ? `<button data-action="delete-quote" data-id="${q.id}" class="ml-2 text-red-500 hover:underline text-xs font-semibold no-print">Elimina</button>` : ''} </div> </div>`; }).join(''); }
+        function startEdit(quoteId) { const quoteToEdit = G.quotesCache.find(q => q.id === quoteId); if (!quoteToEdit) return alert("Preventivo non trovato."); const quoteDataForEdit = JSON.parse(JSON.stringify(quoteToEdit)); if (quoteDataForEdit.createdAt?.seconds) quoteDataForEdit.createdAt = new Date(quoteDataForEdit.createdAt.seconds * 1000).toISOString(); if (quoteDataForEdit.updatedAt?.seconds) quoteDataForEdit.updatedAt = new Date(quoteDataForEdit.updatedAt.seconds * 1000).toISOString(); showView('calculator'); setTimeout(() => initCalculatorView(quoteDataForEdit), 0); } // Usa setTimeout
+        async function deleteQuote(quoteId) { if (G.userRole !== 'manager') return; if (!quoteId) return; if (confirm(`Eliminare definitivamente il preventivo ID: ${quoteId}?`)) { try { await db.collection('quotes').doc(quoteId).delete(); console.log("Preventivo eliminato:", quoteId); } catch (error) { console.error("Errore eliminazione:", error); alert(`Errore: ${error.message}`); } } }
+
+        // --- Backup / Restore Configurazione ---
+        function exportBackup() { if (G.userRole !== 'manager') return; const dataToExport = { config: G.appData.config, pricelist: G.appData.pricelist, materials: G.appData.materials }; const blob = new Blob([JSON.stringify(dataToExport, null, 2)], { type: 'application/json' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `backup_config_${new Date().toISOString().split('T')[0]}.json`; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(a.href); alert("Configurazione esportata."); }
+        function importBackup(e) { if (G.userRole !== 'manager') return; const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = async (event) => { const feedback = document.getElementById('admin-feedback'); feedback.textContent = 'Importazione...'; feedback.className = 'h-5 text-center font-medium text-gray-500'; try { const importedData = JSON.parse(event.target.result); if (!importedData.config || !importedData.pricelist || !importedData.materials || !Array.isArray(importedData.materials) || importedData.materials.length === 0 || !Array.isArray(importedData.pricelist.tiers) || importedData.pricelist.tiers.length === 0) throw new Error('File backup non valido.'); let stdMatId = importedData.pricelist.stdMaterialId; if (!importedData.materials.find(m => m.id === stdMatId)) { const fallbackMat = importedData.materials[0]; alert(`Attenzione: Materiale rif. "${stdMatId}" non trovato. Impostato "${fallbackMat.name}".`); importedData.pricelist.stdMaterialId = fallbackMat.id; } await db.collection('config').doc('main').set({ settings: importedData.config, pricelist: importedData.pricelist, materials: importedData.materials }); feedback.textContent = 'Configurazione importata!'; feedback.className = 'h-5 text-center font-medium text-green-500'; setTimeout(() => { feedback.textContent = ''; /* La vista si aggiorna da sola con onSnapshot*/ }, 3000); alert('Configurazione importata con successo!'); } catch (error) { console.error("Errore import:", error); feedback.textContent = `Errore: ${error.message}`; feedback.className = 'h-5 text-center font-medium text-red-500'; alert(`Errore import: ${error.message}`); } finally { e.target.value = null; } }; reader.readAsText(file); }
+
+        // --- Gestore Eventi Globale ---
+        function attachCommonListeners() { appContainer.removeEventListener('click', handleClicks); appContainer.removeEventListener('submit', handleSubmitDelegation); appContainer.removeEventListener('input', handleInputs); appContainer.removeEventListener('change', handleChanges); appContainer.addEventListener('click', handleClicks); appContainer.addEventListener('submit', handleSubmitDelegation); appContainer.addEventListener('input', handleInputs); appContainer.addEventListener('change', handleChanges); }
+        function handleSubmitDelegation(e) { e.preventDefault(); /* Listener specifici aggiunti in initXXXView */ }
+        function handleClicks(e) { const target = e.target.closest('[data-action]'); if (!target) return; const action = target.dataset.action; const id = target.dataset.id; if (action === 'logout') handleLogout(); else if (action === 'open-admin') showView('admin'); else if (action === 'open-archive') showView('archive'); else if (action === 'close-admin') showView('calculator'); else if (action === 'close-archive') showView('calculator'); else if (action === 'back-to-calculator') { G.editingQuoteId = null; G.currentQuoteData = null; showView('calculator'); } else if (action === 'create-pdf') printQuote(); else if (action === 'login-anonymous') handleAnonymousLogin(); else if (action === 'edit-quote' && id) startEdit(id); else if (action === 'delete-quote' && id) deleteQuote(id); else if (action === 'add-material-row') addMaterialRow(); else if (action === 'delete-material') target.closest('.material-row')?.remove(); else if (action === 'add-pricelist-tier') addPricelistTierRow(); else if (action === 'delete-pricelist-tier') target.closest('.tier-row')?.remove(); }
+        function handleInputs(e) { if (e.target.id === 'search-client-input' && document.getElementById('quotes-archive-list')) renderQuotesArchiveList(e.target.value); }
+        function handleChanges(e) { /* Gestito da listener specifico in initAdminView */ }
+
+        // --- Avvio Iniziale ---
+        console.log("App in attesa di stato autenticazione..."); // onAuthStateChanged gestirà il resto
+    });
     </script>
 </body>
 </html>
-
